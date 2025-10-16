@@ -1,7 +1,9 @@
-import numpy as np
 from abc import ABC, abstractmethod
-import matplotlib.pyplot as plt
 
+import matplotlib.pyplot as plt
+import numpy as np
+
+from DrawTree import Tree, buchheim
 from TreeUtils import gain
 
 
@@ -49,7 +51,7 @@ class BaseDecisionTree(ABC):
         pass
 
 
-class DescisionTree(BaseDecisionTree):
+class DecisionTree(BaseDecisionTree):
     """
     A decision tree implementation that tries to maximise information gain for each decision.
     """
@@ -61,7 +63,6 @@ class DescisionTree(BaseDecisionTree):
         self.data = data
         self.max_depth = max_depth
         self.tree = self.create_decision_tree()
-
 
     def create_decision_tree(self):
         return self.__create_decision_tree(self.data)
@@ -79,26 +80,26 @@ class DescisionTree(BaseDecisionTree):
         """
 
         # Base case: if depth is 0 or data is empty, return None
-        if len(current_data) == 0 or (self.max_depth != None and current_depth == self.max_depth):
+        if len(current_data) == 0 or (self.max_depth is not None and current_depth == self.max_depth):
             return None
-        
+
         # If all labels are the same, return that label
         if np.all(current_data[:, -1] == current_data[0, -1]):
             return current_data[0, -1]
-        
-        feature_index, feature_threshold, info_gain = DescisionTree.find_best_split(current_data)
+
+        feature_index, feature_threshold, info_gain = DecisionTree.find_best_split(current_data)
 
         # Split the data based on the selected feature
         left_subset = current_data[current_data[:, feature_index] <= feature_threshold]
         right_subset = current_data[current_data[:, feature_index] > feature_threshold]
         left_tree = self.__create_decision_tree(left_subset, current_depth + 1)
         right_tree = self.__create_decision_tree(right_subset, current_depth + 1)
-        
+
         self.depth = max(current_depth + 1, self.depth)
         return {
-            BaseDecisionTree.FEATURE_INDEX: feature_index, 
-            BaseDecisionTree.FEATURE_THRESHOLD: feature_threshold, 
-            BaseDecisionTree.LEFT_TREE: left_tree, 
+            BaseDecisionTree.FEATURE_INDEX: feature_index,
+            BaseDecisionTree.FEATURE_THRESHOLD: feature_threshold,
+            BaseDecisionTree.LEFT_TREE: left_tree,
             BaseDecisionTree.RIGHT_TREE: right_tree
         }
 
@@ -115,7 +116,7 @@ class DescisionTree(BaseDecisionTree):
 
         best_gain = -1
         best_threshold = None
-        
+
         # sort the data by the feature to consider values between entries of different classes
         sorted_data = data[data[:, feature_index].argsort()]
         feature_values = sorted_data[:, feature_index]
@@ -128,7 +129,7 @@ class DescisionTree(BaseDecisionTree):
                 if current_gain > best_gain:
                     best_gain = current_gain
                     best_threshold = threshold
-        
+
         return best_gain, best_threshold
 
 
@@ -145,16 +146,16 @@ class DescisionTree(BaseDecisionTree):
         best_feature = None
         best_threshold = None
         best_gain = -1
-        
+
         for feature_index in range(data.shape[1] - 1):  # Exclude the label column
-            current_gain, current_threshold = DescisionTree.maximise_gain_for_feature(data, feature_index)
+            current_gain, current_threshold = DecisionTree.maximise_gain_for_feature(data, feature_index)
             if current_gain > best_gain:
                 best_gain = current_gain
                 best_feature = feature_index
                 best_threshold = current_threshold
-        
+
         return best_feature, best_threshold, best_gain
-    
+
 
     def evaluate(self, test_data):
         """
@@ -178,7 +179,7 @@ class DescisionTree(BaseDecisionTree):
         """
         Recursively traverse the decision tree to predict the label for a given sample.
         Returns the predicted label.
-        
+
         Parameters:
         - current_tree: The current node of the decision tree (can be a dict or a
           label if it's a leaf).
@@ -191,61 +192,39 @@ class DescisionTree(BaseDecisionTree):
         # If the tree is a leaf node, return the label
         if not isinstance(current_tree, dict):
             return current_tree
-        
+
         feature_index = current_tree[BaseDecisionTree.FEATURE_INDEX]
         feature_threshold = current_tree[BaseDecisionTree.FEATURE_THRESHOLD]
-        
+
         if sample[feature_index] <= feature_threshold:
             return self.__predict(current_tree[BaseDecisionTree.LEFT_TREE], sample)
         else:
             return self.__predict(current_tree[BaseDecisionTree.RIGHT_TREE], sample)
-        
 
     def visualise(self, x: int, max_depth=5) -> plt:
-        def count_leaves(node):
-            """Count total leaf nodes under the given node."""
-            if not isinstance(node, dict):
-                return 1
-            return count_leaves(node[BaseDecisionTree.LEFT_TREE]) + count_leaves(node[BaseDecisionTree.RIGHT_TREE])
+        _, ax = plt.subplots(figsize=(12, 8))
+        ax.axis('off')
 
-        def plot_tree(node, x=0, y=0, x_offset=1.0, depth=0):
-            if depth > max_depth:
-                return
+        tree = self.parse_draw_tree(self.tree, 0)
+        draw_tree = buchheim(tree)
 
-            if not isinstance(node, dict):
-                plt.text(x, y, str(node), ha='center', va='center',
-                        bbox=dict(facecolor='white', edgecolor='black'))
-                return
+        def draw_node(node, depth):
+            if depth >= max_depth: return
+            if node is not None:
+                ax.text(node.x * x, -node.y * x, node.label, ha='center', va='center',
+                        bbox=dict(boxstyle='round,pad=0.3', fc='white', ec='black', lw=1),
+                        fontsize=5)
+                if node.parent is not None:
+                    ax.plot([node.x * x, node.parent.x * x], [-node.y * x, -node.parent.y * x], 'k-')
+                for child in node.children:
+                    draw_node(child, depth + 1)
 
-            feature_index = node[BaseDecisionTree.FEATURE_INDEX]
-            feature_threshold = node[BaseDecisionTree.FEATURE_THRESHOLD]
-            plt.text(x, y, f'X[{feature_index}] <= {feature_threshold:.2f}', 
-                    ha='center', va='center',
-                    bbox=dict(facecolor='lightgrey', edgecolor='black'))
-
-            # Count leaves to balance horizontal spacing
-            left = node[BaseDecisionTree.LEFT_TREE]
-            right = node[BaseDecisionTree.RIGHT_TREE]
-            left_leaves = count_leaves(left)
-            right_leaves = count_leaves(right)
-            total_leaves = left_leaves + right_leaves
-
-            # Compute new x positions proportionally to subtree sizes
-            left_x = x - x_offset * (right_leaves / total_leaves)
-            right_x = x + x_offset * (left_leaves / total_leaves)
-            child_y = y - 1.5
-
-            # Draw connections
-            # Connections remain if the child is a leaf or a subtree within max_depth
-            plt.plot([x, left_x], [y, child_y], 'k-')
-            plt.plot([x, right_x], [y, child_y], 'k-')
-
-            # Recurse with smaller offset
-            plot_tree(left, left_x, child_y, x_offset / 1.8, depth + 1)
-            plot_tree(right, right_x, child_y, x_offset / 1.8, depth + 1)
-
-        depth_to_draw = min(self.depth, max_depth)
-        plt.figure(figsize=(depth_to_draw ** 2 * x, depth_to_draw * x))
-        plot_tree(self.tree, x=0, y=0, x_offset=8.0, depth=0)
-        plt.axis('off')
+        draw_node(draw_tree, 0)
         return plt
+
+    def parse_draw_tree(self, current_tree, node_id):
+        if not isinstance(current_tree, dict):
+            return Tree(str(current_tree), node_id)
+        left_tree = self.parse_draw_tree(current_tree[BaseDecisionTree.LEFT_TREE], 0)
+        right_tree = self.parse_draw_tree(current_tree[BaseDecisionTree.RIGHT_TREE], 1)
+        return Tree(f"[X{current_tree[BaseDecisionTree.FEATURE_INDEX]} < {current_tree[BaseDecisionTree.FEATURE_THRESHOLD]:.2f}]", node_id, left_tree, right_tree)
