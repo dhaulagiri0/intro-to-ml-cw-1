@@ -22,9 +22,28 @@ class BaseDecisionTree(ABC):
     def __init__(self, data, depth=None):
         pass
 
+    @abstractmethod
+    def train(self, max_depth=None):
+        """
+        Train the decision tree on the provided dataset.
+        We expect each instance of the decision tree to be initialised with the training data, 
+        which cannot be modified later.
+        This makes sense since the tree trained is tightly coupled with the data it is trained on.
+
+        Parameters:
+        - max_depth: The maximum depth of the tree. If None, the tree will grow until all leaves are pure.
+        """
+        pass
 
     @abstractmethod
     def evaluate(self, test_data):
+        """
+        Evaluate the decision tree on the provided test dataset.
+        Returns the accuracy as a float.
+
+        Parameters:
+        - test_data: A 2D numpy array where the last column is the label.
+        """
         pass
 
     @abstractmethod
@@ -45,7 +64,7 @@ class BaseDecisionTree(ABC):
         Returns the matplotlib.pyplot object for further manipultion or display.
 
         Parameters:
-        - x: The horizontal scaling factor for the visualization.
+        - h_scaling: The horizontal scaling factor for the visualization, larger means wider plot.
         - max_depth: The maximum depth to visualize.
         """
         pass
@@ -58,14 +77,12 @@ class DecisionTree(BaseDecisionTree):
 
     depth = 0  # Track the depth of the tree
 
-    def __init__(self, data, max_depth=None):
-        # Assume data is a 2D numpy array where the last column is the label
+    def __init__(self, data):
         self.data = data
-        self.max_depth = max_depth
-        self.tree = self.create_decision_tree()
 
-    def create_decision_tree(self):
-        return self.__create_decision_tree(self.data)
+    def train(self, max_depth=None):
+        self.max_depth = max_depth
+        self.tree = self.__create_decision_tree(self.data)
 
 
     ## Helper functions for decision tree creation
@@ -148,7 +165,8 @@ class DecisionTree(BaseDecisionTree):
         best_gain = -1
 
         for feature_index in range(data.shape[1] - 1):  # Exclude the label column
-            current_gain, current_threshold = DecisionTree.maximise_gain_for_feature(data, feature_index)
+            current_gain, current_threshold = DecisionTree.maximise_gain_for_feature(
+                data, feature_index)
             if current_gain > best_gain:
                 best_gain = current_gain
                 best_feature = feature_index
@@ -172,6 +190,9 @@ class DecisionTree(BaseDecisionTree):
 
 
     def predict(self, sample):
+        if self.tree is None:
+            raise ValueError("The decision tree has not been trained yet. " \
+            "Please call the 'train' method before prediction.")
         return self.__predict(self.tree, sample)
 
 
@@ -201,30 +222,52 @@ class DecisionTree(BaseDecisionTree):
         else:
             return self.__predict(current_tree[BaseDecisionTree.RIGHT_TREE], sample)
 
-    def visualise(self, x: int, max_depth=5) -> plt:
+
+    def visualise(self, h_scaling: int, max_depth=5) -> plt:
+        if self.tree is None:
+            raise ValueError("The decision tree has not been trained yet. "
+            "Please call the 'train' method before visualization.")
+
         _, ax = plt.subplots(figsize=(12, 8))
         ax.axis('off')
 
-        tree = self.parse_draw_tree(self.tree, 0)
+        tree = self.__parse_draw_tree(self.tree, 0)
         draw_tree = buchheim(tree)
 
         def draw_node(node, depth):
             if depth >= max_depth: return
             if node is not None:
-                ax.text(node.x * x, -node.y * x, node.label, ha='center', va='center',
+                ax.text(node.x * h_scaling, -node.y * h_scaling, node.label, ha='center', va='center',
                         bbox=dict(boxstyle='round,pad=0.3', fc='white', ec='black', lw=1),
                         fontsize=5)
                 if node.parent is not None:
-                    ax.plot([node.x * x, node.parent.x * x], [-node.y * x, -node.parent.y * x], 'k-')
+                    ax.plot(
+                        [node.x * h_scaling, node.parent.x * h_scaling], 
+                        [-node.y * h_scaling, -node.parent.y * h_scaling], 
+                        'k-')
                 for child in node.children:
                     draw_node(child, depth + 1)
 
         draw_node(draw_tree, 0)
         return plt
 
-    def parse_draw_tree(self, current_tree, node_id):
+
+    def __parse_draw_tree(self, current_tree, node_id):
+        """
+        Recursively parse the decision tree into a format suitable for visualization.
+        Returns a Tree object representing the structure of the decision tree.
+
+        Parameters:
+        - current_tree: The current node of the decision tree (can be a dict or a
+          label if it's a leaf).
+        - node_id: An integer representing the unique ID of the current node.
+        """
+
         if not isinstance(current_tree, dict):
             return Tree(str(current_tree), node_id)
-        left_tree = self.parse_draw_tree(current_tree[BaseDecisionTree.LEFT_TREE], 0)
-        right_tree = self.parse_draw_tree(current_tree[BaseDecisionTree.RIGHT_TREE], 1)
-        return Tree(f"[X{current_tree[BaseDecisionTree.FEATURE_INDEX]} < {current_tree[BaseDecisionTree.FEATURE_THRESHOLD]:.2f}]", node_id, left_tree, right_tree)
+        left_tree = self.__parse_draw_tree(current_tree[BaseDecisionTree.LEFT_TREE], 0)
+        right_tree = self.__parse_draw_tree(current_tree[BaseDecisionTree.RIGHT_TREE], 1)
+        return Tree(
+            f"[X{current_tree[BaseDecisionTree.FEATURE_INDEX]} < "
+            f"{current_tree[BaseDecisionTree.FEATURE_THRESHOLD]:.2f}]", 
+            node_id, left_tree, right_tree)

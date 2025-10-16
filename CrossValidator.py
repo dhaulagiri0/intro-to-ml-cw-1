@@ -58,7 +58,8 @@ class KFoldCrossValidator:
             train_set = np.vstack([folds[j] for j in range(self.k) if j != i])
             
             # creates a new decision tree instance based on the training set
-            tree = self.tree_cls(train_set, tree_depth)
+            tree = self.tree_cls(train_set)
+            tree.train(tree_depth)
             
             # Evaluate the decision tree on the test set
             accuracy = tree.evaluate(test_set)
