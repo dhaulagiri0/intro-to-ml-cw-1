@@ -1,5 +1,6 @@
 import numpy as np
 from abc import ABC, abstractmethod
+import matplotlib.pyplot as plt
 
 from TreeUtils import gain
 
@@ -32,6 +33,18 @@ class BaseDecisionTree(ABC):
 
         Parameters:
         - sample: A 1D numpy array representing the features of the sample.
+        """
+        pass
+
+    @abstractmethod
+    def visualise(self, x: int, max_depth=5) -> plt:
+        """
+        Visualise the decision tree structure, with pure matplotlib.
+        Returns the matplotlib.pyplot object for further manipultion or display.
+
+        Parameters:
+        - x: The horizontal scaling factor for the visualization.
+        - max_depth: The maximum depth to visualize.
         """
         pass
 
@@ -186,3 +199,53 @@ class DescisionTree(BaseDecisionTree):
             return self.__predict(current_tree[BaseDecisionTree.LEFT_TREE], sample)
         else:
             return self.__predict(current_tree[BaseDecisionTree.RIGHT_TREE], sample)
+        
+
+    def visualise(self, x: int, max_depth=5) -> plt:
+        def count_leaves(node):
+            """Count total leaf nodes under the given node."""
+            if not isinstance(node, dict):
+                return 1
+            return count_leaves(node[BaseDecisionTree.LEFT_TREE]) + count_leaves(node[BaseDecisionTree.RIGHT_TREE])
+
+        def plot_tree(node, x=0, y=0, x_offset=1.0, depth=0):
+            if depth > max_depth:
+                return
+
+            if not isinstance(node, dict):
+                plt.text(x, y, str(node), ha='center', va='center',
+                        bbox=dict(facecolor='white', edgecolor='black'))
+                return
+
+            feature_index = node[BaseDecisionTree.FEATURE_INDEX]
+            feature_threshold = node[BaseDecisionTree.FEATURE_THRESHOLD]
+            plt.text(x, y, f'X[{feature_index}] <= {feature_threshold:.2f}', 
+                    ha='center', va='center',
+                    bbox=dict(facecolor='lightgrey', edgecolor='black'))
+
+            # Count leaves to balance horizontal spacing
+            left = node[BaseDecisionTree.LEFT_TREE]
+            right = node[BaseDecisionTree.RIGHT_TREE]
+            left_leaves = count_leaves(left)
+            right_leaves = count_leaves(right)
+            total_leaves = left_leaves + right_leaves
+
+            # Compute new x positions proportionally to subtree sizes
+            left_x = x - x_offset * (right_leaves / total_leaves)
+            right_x = x + x_offset * (left_leaves / total_leaves)
+            child_y = y - 1.5
+
+            # Draw connections
+            # Connections remain if the child is a leaf or a subtree within max_depth
+            plt.plot([x, left_x], [y, child_y], 'k-')
+            plt.plot([x, right_x], [y, child_y], 'k-')
+
+            # Recurse with smaller offset
+            plot_tree(left, left_x, child_y, x_offset / 1.8, depth + 1)
+            plot_tree(right, right_x, child_y, x_offset / 1.8, depth + 1)
+
+        depth_to_draw = min(self.depth, max_depth)
+        plt.figure(figsize=(depth_to_draw ** 2 * x, depth_to_draw * x))
+        plot_tree(self.tree, x=0, y=0, x_offset=8.0, depth=0)
+        plt.axis('off')
+        return plt
