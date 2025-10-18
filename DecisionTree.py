@@ -17,9 +17,11 @@ class BaseDecisionTree(ABC):
     FEATURE_THRESHOLD: str = "feature_threshold"
     LEFT_TREE: str = "left_tree"
     RIGHT_TREE: str = "right_tree"
+    tree = None
+    label_to_index = None
 
     @abstractmethod
-    def __init__(self, data, depth=None):
+    def __init__(self, data, depth=None, label_to_index=None):
         pass
 
     @abstractmethod
@@ -36,17 +38,6 @@ class BaseDecisionTree(ABC):
         pass
 
     @abstractmethod
-    def evaluate(self, test_data):
-        """
-        Evaluate the decision tree on the provided test dataset.
-        Returns the accuracy as a float.
-
-        Parameters:
-        - test_data: A 2D numpy array where the last column is the label.
-        """
-        pass
-
-    @abstractmethod
     def predict(self, sample):
         """
         Predict the label for a given sample (without label).
@@ -56,6 +47,19 @@ class BaseDecisionTree(ABC):
         - sample: A 1D numpy array representing the features of the sample.
         """
         pass
+
+
+    @abstractmethod
+    def batch_predict(self, samples):
+        """
+        Predict the labels for a batch of samples.
+        Returns a 1D numpy array of predicted labels.
+
+        Parameters:
+        - samples: A 2D numpy array where each row represents the features of a sample.
+        """
+        pass
+
 
     @abstractmethod
     def visualise(self, x: int, max_depth=5) -> plt:
@@ -77,8 +81,12 @@ class DecisionTree(BaseDecisionTree):
 
     depth = 0  # Track the depth of the tree
 
-    def __init__(self, data):
+    def __init__(self, data, label_to_index=None):
         self.data = data
+        if label_to_index is None:
+            self.label_to_index = {label: idx for idx, label in enumerate(np.unique(data[:, -1]))}
+        else:
+            self.label_to_index = label_to_index
 
     def train(self, max_depth=None):
         self.max_depth = max_depth
@@ -96,9 +104,15 @@ class DecisionTree(BaseDecisionTree):
         - current_depth: The current depth of the tree.
         """
 
-        # Base case: if depth is 0 or data is empty, return None
-        if len(current_data) == 0 or (self.max_depth is not None and current_depth == self.max_depth):
+        # If data is empty, return None
+        if len(current_data) == 0:
             return None
+        
+        if self.max_depth is not None and current_depth >= self.max_depth:
+            # Return the majority label in the current data
+            labels, counts = np.unique(current_data[:, -1], return_counts=True)
+            majority_label = labels[np.argmax(counts)]
+            return majority_label
 
         # If all labels are the same, return that label
         if np.all(current_data[:, -1] == current_data[0, -1]):
@@ -175,25 +189,18 @@ class DecisionTree(BaseDecisionTree):
         return best_feature, best_threshold, best_gain
 
 
-    def evaluate(self, test_data):
-        """
-        Evaluate the decision tree on the provided test dataset.
-        Returns the accuracy as a float.
-
-        Parameters:
-        - test_data: A 2D numpy array where the last column is the label.
-        """
-        X = test_data[:, :-1]
-        y_true = test_data[:, -1]
-        y_pred = np.array([self.predict(x) for x in X])
-        return np.mean(y_pred == y_true)
-
-
     def predict(self, sample):
         if self.tree is None:
             raise ValueError("The decision tree has not been trained yet. " \
             "Please call the 'train' method before prediction.")
         return self.__predict(self.tree, sample)
+    
+
+    def batch_predict(self, samples):
+        if self.tree is None:
+            raise ValueError("The decision tree has not been trained yet. "
+            "Please call the 'train' method before prediction.")
+        return np.array([self.__predict(self.tree, sample) for sample in samples])
 
 
     def __predict(self, current_tree, sample):

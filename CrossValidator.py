@@ -1,5 +1,7 @@
+from collections.abc import Mapping
 import numpy as np
 from DecisionTree import BaseDecisionTree
+from TreeEvaluator import TreeEvaluator
 
 class KFoldCrossValidator:
     """
@@ -49,9 +51,11 @@ class KFoldCrossValidator:
         - tree_depth: Optional maximum depth for the decision tree.
         """
 
-        accuracies = []
         folds = self.__k_fold_split(data)
-        
+        max_accuracy = 0
+        best_tree = None
+        cumulative_accuracy = 0
+        cumulative_confusion_matrix = None
         for i in range(self.k):
             # Use the i-th fold as the test set and the rest as the training set
             test_set = folds[i]
@@ -62,10 +66,24 @@ class KFoldCrossValidator:
             tree.train(tree_depth)
             
             # Evaluate the decision tree on the test set
-            accuracy = tree.evaluate(test_set)
-            accuracies.append(accuracy)
+            accuracy = TreeEvaluator.evaluate(test_set, tree)
+            confusion_matrix = TreeEvaluator.confusion_matrix(
+                test_set, 
+                tree=tree)
+            cumulative_confusion_matrix = (
+                confusion_matrix if cumulative_confusion_matrix is None 
+                else cumulative_confusion_matrix + confusion_matrix
+            )
             print(f"Fold {i + 1}: Accuracy = {accuracy:.4f}")
+
+            if accuracy > max_accuracy:
+                max_accuracy = accuracy
+                best_tree = tree
+            cumulative_accuracy += accuracy
         
-        average_accuracy = np.mean(accuracies)
-        print(f"Average Accuracy over {self.k} folds: {average_accuracy:.4f}")
-        return average_accuracy
+        return {
+            "average_accuracy": cumulative_accuracy / self.k,
+            "best_tree": best_tree,
+            "avg_confusion_matrix": cumulative_confusion_matrix / self.k,
+            "label_to_index": tree.label_to_index,
+        }
