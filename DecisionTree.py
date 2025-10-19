@@ -235,7 +235,7 @@ class DecisionTree(BaseDecisionTree):
             raise ValueError("The decision tree has not been trained yet. "
             "Please call the 'train' method before visualization.")
 
-        _, ax = plt.subplots(figsize=(12, 8))
+        _, ax = plt.subplots(figsize=(12 * h_scaling, 8))
         ax.axis('off')
 
         tree = self.__parse_draw_tree(self.tree, 0)
