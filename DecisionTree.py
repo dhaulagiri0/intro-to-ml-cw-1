@@ -4,7 +4,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 
 from DrawTree import Tree, buchheim
-from TreeUtils import gain
+from TreeUtils import entropy, gain
 
 
 class BaseDecisionTree(ABC):
@@ -19,6 +19,7 @@ class BaseDecisionTree(ABC):
     RIGHT_TREE: str = "right_tree"
     tree = None
     label_to_index = None
+    feature_importance: dict = None
 
     @abstractmethod
     def __init__(self, data, depth=None, label_to_index=None):
@@ -28,7 +29,7 @@ class BaseDecisionTree(ABC):
     def train(self, max_depth=None):
         """
         Train the decision tree on the provided dataset.
-        We expect each instance of the decision tree to be initialised with the training data, 
+        We expect each instance of the decision tree to be initialised with the training data,
         which cannot be modified later.
         This makes sense since the tree trained is tightly coupled with the data it is trained on.
 
@@ -48,7 +49,6 @@ class BaseDecisionTree(ABC):
         """
         pass
 
-
     @abstractmethod
     def batch_predict(self, samples):
         """
@@ -59,7 +59,6 @@ class BaseDecisionTree(ABC):
         - samples: A 2D numpy array where each row represents the features of a sample.
         """
         pass
-
 
     @abstractmethod
     def visualise(self, x: int, max_depth=5) -> plt:
@@ -84,14 +83,16 @@ class DecisionTree(BaseDecisionTree):
     def __init__(self, data, label_to_index=None):
         self.data = data
         if label_to_index is None:
-            self.label_to_index = {label: idx for idx, label in enumerate(np.unique(data[:, -1]))}
+            self.label_to_index = {
+                label: idx for idx, label in enumerate(np.unique(data[:, -1]))
+            }
         else:
             self.label_to_index = label_to_index
+        self.feature_importance = {}
 
     def train(self, max_depth=None):
         self.max_depth = max_depth
         self.tree = self.__create_decision_tree(self.data)
-
 
     ## Helper functions for decision tree creation
     def __create_decision_tree(self, current_data, current_depth=0):
@@ -107,7 +108,7 @@ class DecisionTree(BaseDecisionTree):
         # If data is empty, return None
         if len(current_data) == 0:
             return None
-        
+
         if self.max_depth is not None and current_depth >= self.max_depth:
             # Return the majority label in the current data
             labels, counts = np.unique(current_data[:, -1], return_counts=True)
@@ -118,7 +119,14 @@ class DecisionTree(BaseDecisionTree):
         if np.all(current_data[:, -1] == current_data[0, -1]):
             return current_data[0, -1]
 
-        feature_index, feature_threshold, info_gain = DecisionTree.find_best_split(current_data)
+        feature_index, feature_threshold, info_gain = DecisionTree.find_best_split(
+            current_data
+        )
+        # Store feature importance
+        # The weight is the proportion of samples at this node relative to the total samples
+        self.__update_feature_importance(
+            feature_index, info_gain, len(current_data) / len(self.data)
+        )
 
         # Split the data based on the selected feature
         left_subset = current_data[current_data[:, feature_index] <= feature_threshold]
@@ -131,9 +139,24 @@ class DecisionTree(BaseDecisionTree):
             BaseDecisionTree.FEATURE_INDEX: feature_index,
             BaseDecisionTree.FEATURE_THRESHOLD: feature_threshold,
             BaseDecisionTree.LEFT_TREE: left_tree,
-            BaseDecisionTree.RIGHT_TREE: right_tree
+            BaseDecisionTree.RIGHT_TREE: right_tree,
         }
 
+    def __update_feature_importance(
+        self, feature_index, info_gain: float, weight: float
+    ):
+        """
+        Update the feature importance dictionary with the given feature index,
+        entropy, and weight. Using information gain as a measure of importance.
+
+        Parameters:
+        - feature_index: The index of the feature.
+        - entropy: The entropy value associated with the feature split.
+        - weight: A weight factor (e.g., proportion of samples at this node)."""
+        if feature_index not in self.feature_importance:
+            self.feature_importance[feature_index] = info_gain * weight
+        else:
+            self.feature_importance[feature_index] += info_gain * weight
 
     @staticmethod
     def maximise_gain_for_feature(data, feature_index):
@@ -154,7 +177,9 @@ class DecisionTree(BaseDecisionTree):
         labels = sorted_data[:, -1]
         # find midpoints between different class labels
         for i in range(1, len(feature_values)):
-            if labels[i] != labels[i - 1]:  # Only consider thresholds between different classes
+            if (
+                labels[i] != labels[i - 1]
+            ):  # Only consider thresholds between different classes
                 threshold = (feature_values[i] + feature_values[i - 1]) / 2
                 current_gain = gain(data, feature_index, threshold)
                 if current_gain > best_gain:
@@ -162,7 +187,6 @@ class DecisionTree(BaseDecisionTree):
                     best_threshold = threshold
 
         return best_gain, best_threshold
-
 
     @staticmethod
     def find_best_split(data):
@@ -180,7 +204,8 @@ class DecisionTree(BaseDecisionTree):
 
         for feature_index in range(data.shape[1] - 1):  # Exclude the label column
             current_gain, current_threshold = DecisionTree.maximise_gain_for_feature(
-                data, feature_index)
+                data, feature_index
+            )
             if current_gain > best_gain:
                 best_gain = current_gain
                 best_feature = feature_index
@@ -188,20 +213,21 @@ class DecisionTree(BaseDecisionTree):
 
         return best_feature, best_threshold, best_gain
 
-
     def predict(self, sample):
         if self.tree is None:
-            raise ValueError("The decision tree has not been trained yet. " \
-            "Please call the 'train' method before prediction.")
+            raise ValueError(
+                "The decision tree has not been trained yet. "
+                "Please call the 'train' method before prediction."
+            )
         return self.__predict(self.tree, sample)
-    
 
     def batch_predict(self, samples):
         if self.tree is None:
-            raise ValueError("The decision tree has not been trained yet. "
-            "Please call the 'train' method before prediction.")
+            raise ValueError(
+                "The decision tree has not been trained yet. "
+                "Please call the 'train' method before prediction."
+            )
         return np.array([self.__predict(self.tree, sample) for sample in samples])
-
 
     def __predict(self, current_tree, sample):
         """
@@ -229,35 +255,43 @@ class DecisionTree(BaseDecisionTree):
         else:
             return self.__predict(current_tree[BaseDecisionTree.RIGHT_TREE], sample)
 
-
     def visualise(self, h_scaling: int, max_depth=5) -> plt:
         if self.tree is None:
-            raise ValueError("The decision tree has not been trained yet. "
-            "Please call the 'train' method before visualization.")
+            raise ValueError(
+                "The decision tree has not been trained yet. "
+                "Please call the 'train' method before visualization."
+            )
 
         _, ax = plt.subplots(figsize=(12 * h_scaling, 8))
-        ax.axis('off')
+        ax.axis("off")
 
         tree = self.__parse_draw_tree(self.tree, 0)
         draw_tree = buchheim(tree)
 
         def draw_node(node, depth):
-            if depth >= max_depth: return
+            if depth >= max_depth:
+                return
             if node is not None:
-                ax.text(node.x * h_scaling, -node.y * h_scaling, node.label, ha='center', va='center',
-                        bbox=dict(boxstyle='round,pad=0.3', fc='white', ec='black', lw=1),
-                        fontsize=5)
+                ax.text(
+                    node.x * h_scaling,
+                    -node.y * h_scaling,
+                    node.label,
+                    ha="center",
+                    va="center",
+                    bbox=dict(boxstyle="round,pad=0.3", fc="white", ec="black", lw=1),
+                    fontsize=5,
+                )
                 if node.parent is not None:
                     ax.plot(
-                        [node.x * h_scaling, node.parent.x * h_scaling], 
-                        [-node.y * h_scaling, -node.parent.y * h_scaling], 
-                        'k-')
+                        [node.x * h_scaling, node.parent.x * h_scaling],
+                        [-node.y * h_scaling, -node.parent.y * h_scaling],
+                        "k-",
+                    )
                 for child in node.children:
                     draw_node(child, depth + 1)
 
         draw_node(draw_tree, 0)
         return plt
-
 
     def __parse_draw_tree(self, current_tree, node_id):
         """
@@ -273,8 +307,31 @@ class DecisionTree(BaseDecisionTree):
         if not isinstance(current_tree, dict):
             return Tree(str(current_tree), node_id)
         left_tree = self.__parse_draw_tree(current_tree[BaseDecisionTree.LEFT_TREE], 0)
-        right_tree = self.__parse_draw_tree(current_tree[BaseDecisionTree.RIGHT_TREE], 1)
+        right_tree = self.__parse_draw_tree(
+            current_tree[BaseDecisionTree.RIGHT_TREE], 1
+        )
         return Tree(
             f"[X{current_tree[BaseDecisionTree.FEATURE_INDEX]} < "
-            f"{current_tree[BaseDecisionTree.FEATURE_THRESHOLD]:.2f}]", 
-            node_id, left_tree, right_tree)
+            f"{current_tree[BaseDecisionTree.FEATURE_THRESHOLD]:.2f}]",
+            node_id,
+            left_tree,
+            right_tree,
+        )
+
+    def get_top_k_features(self, k: int) -> list[tuple[int, float]]:
+        """
+        Get the top k important features based on feature importance scores.
+        Returns a list of (feature indices, importance scores).
+
+        Parameters:
+        - k: The number of top features to return.
+        """
+        # Sort features by importance score in descending order
+        sorted_features = sorted(
+            self.feature_importance.items(), key=lambda item: item[1], reverse=True
+        )
+
+        # Get the top k feature indices and their importance scores
+        top_k_features = [(feature[0], feature[1]) for feature in sorted_features[:k]]
+
+        return top_k_features
