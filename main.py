@@ -20,12 +20,13 @@ Usage examples:
 """
 
 import argparse
-import numpy as np
 import sys
 from pathlib import Path
 
-from DecisionTree import DecisionTree
+import numpy as np
+
 from CrossValidator import KFoldCrossValidator
+from DecisionTree import DecisionTree
 from TreeEvaluator import TreeEvaluator
 
 

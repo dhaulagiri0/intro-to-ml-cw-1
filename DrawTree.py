@@ -1,163 +1,140 @@
-# https://llimllib.github.io/pymag-trees/
-
-import numpy as np
-
+# Follows the buchheim algorithm:
+# Source: https://llimllib.github.io/pymag-trees/
 
 class DrawTree(object):
-    def __init__(self, tree, parent=None, depth=0, number=1):
+    def __init__(self, tree, parent=None, depth=0, left_brother=None):
         self.x = -1.
         self.y = depth
         self.tree = tree
-        self.label = tree.label
-        self.children = [
-            DrawTree(c, self, depth+1, i+1) for i, c in enumerate(tree.children)
-        ]
+
+        self.children = []
+        self.left = None
+        self.right = None
+
+        if not isinstance(tree, dict):
+            self.label = str(tree)
+        else:
+            self.label = f"[X{tree['feature_index']} < {tree['feature_threshold']:.2f}]"
+            if tree_left := tree["left_tree"]:
+                self.left = DrawTree(tree_left, self, depth + 1)
+                self.children.append(self.left)
+            if tree_right := tree["right_tree"]:
+                self.right = DrawTree(tree_right, self, depth + 1, self.left)
+                self.children.append(self.right)
+
         self.parent = parent
         self.thread = None
-        self.offset = 0
         self.mod = 0
-        self.ancestor = self
         self.change = self.shift = 0
-        self._lmost_sibling = None
-        #this is the number of the node in its group of siblings 1..n
-        self.number = number
+        self.left_brother = left_brother
 
-    def left(self):
-        return self.thread or (len(self.children) and self.children[0])
+    def next_left(self):
+        return self.thread or self.left
 
-    def right(self):
-        return self.thread or (len(self.children) and self.children[-1])
+    def next_right(self):
+        return self.thread or self.right
 
-    def left_brother(self):
-        n = None
-        if self.parent:
-            for node in self.parent.children:
-                if node == self: return n
-                else:            n = node
-        return n
-
-    def get_lmost_sibling(self):
-        if not self._lmost_sibling and self.parent and self != \
-        self.parent.children[0]:
-            self._lmost_sibling = self.parent.children[0]
-        return self._lmost_sibling
-
-    leftmost_sibling = property(get_lmost_sibling)
 
 def buchheim(tree):
     dt = firstwalk(DrawTree(tree))
-    min = second_walk(dt)
-    if min < 0:
-        third_walk(dt, -min)
+    second_walk(dt)
     return dt
 
-def firstwalk(v, distance=1.):
-    if len(v.children) == 0:
-        if v.leftmost_sibling:
-            v.x = v.left_brother().x + distance
+DISTANCE = 1
+
+def firstwalk(cur):
+    """
+    Does a post-order traversal of the tree to set initial x-coordinates of the children.
+    Then place parent at midpoint of its children
+    """
+    if not cur.children:
+        if cur.left_brother:
+            cur.x = cur.left_brother.x + DISTANCE
         else:
-            v.x = 0.
+            cur.x = 0
     else:
-        default_ancestor = v.children[0]
-        for w in v.children:
-            firstwalk(w)
-            default_ancestor = apportion(w, default_ancestor,
-                                         distance)
-        execute_shifts(v)
+        for c in cur.children:
+            firstwalk(c)
+        if cur.right and cur.left:
+            apportion(cur)
+        execute_shifts(cur)
+        midpoint = (cur.children[0].x + cur.children[-1].x) / 2
 
-        midpoint = (v.children[0].x + v.children[-1].x) / 2
-
-        ell = v.children[0]
-        arr = v.children[-1]
-        w = v.left_brother()
-        if w:
-            v.x = w.x + distance
-            v.mod = v.x - midpoint
+        left_brother = cur.left_brother
+        if left_brother:
+            cur.x = left_brother.x + DISTANCE
+            cur.mod = cur.x - midpoint
         else:
-            v.x = midpoint
-    return v
+            cur.x = midpoint
+    return cur
 
-def apportion(v, default_ancestor, distance):
-    w = v.left_brother()
-    if w is not None:
-        #in buchheim notation:
-        #i == inner; o == outer; r == right; l == left;
-        vir = vor = v
-        vil = w
-        vol = v.leftmost_sibling
-        sir = sor = v.mod
-        sil = vil.mod
-        sol = vol.mod
-        while vil.right() and vir.left():
-            vil = vil.right()
-            vir = vir.left()
-            vol = vol.left()
-            vor = vor.right()
-            vor.ancestor = v
-            shift = (vil.x + sil) - (vir.x + sir) + distance
-            if shift > 0:
-                a = ancestor(vil, v, default_ancestor)
-                move_subtree(a, v, shift)
-                sir = sir + shift
-                sor = sor + shift
-            sil += vil.mod
-            sir += vir.mod
-            sol += vol.mod
-            sor += vor.mod
-        if vil.right() and not vor.right():
-            vor.thread = vil.right()
-            vor.mod += sil - sor
-        else:
-            if vir.left() and not vol.left():
-                vol.thread = vir.left()
-                vol.mod += sir - sol
-            default_ancestor = v
-    return default_ancestor
+def apportion(cur):
+    """
+    Iterates through the "contours" of the left and right subtrees to check overlaps and space them accordingly
+    Creates thread pointers between levels of the tree where necessary to speed up computations
+    """
+    if not cur.right or not cur.left:
+        return
+
+    # in buchheim notation:
+    # i == inner; o == outer; r == right; l == left;
+    cir = cor = cur.right
+    cil = col = cur.left
+    sir = sor = cur.right.mod
+    sil = cur.left.mod
+    sol = cur.left.mod
+
+    while cil and cir and cil.next_left() and cir.next_right():
+        cil = cil.next_right()
+        cir = cir.next_left()
+        if col:
+            col = col.next_left()
+        if cor:
+            cor = cor.next_right()
+
+        shift = (cil.x + sil) - (cir.x + sir) + DISTANCE
+        if shift > 0:
+            move_subtree(cur.left, cur.right, shift)
+            sir = sir + shift
+            sor = sor + shift
+
+        sil += cil.mod
+        sir += cir.mod
+        if col:
+            sol += col.mod
+        if cor:
+            sor += cor.mod
+
+    if cil and cil.right and cor and not cor.right:
+        cor.thread = cil.right
+        cor.mod += sil - sor
+    elif cir and cir.left and col and not col.left:
+        col.thread = cir.left
+        col.mod += sir - sol
+
 
 def move_subtree(wl, wr, shift):
-    subtrees = wr.number - wl.number
-    wr.change -= shift / subtrees
+    wr.change -= shift
     wr.shift += shift
-    wl.change += shift / subtrees
+    wl.change += shift
     wr.x += shift
     wr.mod += shift
 
-def execute_shifts(v):
+
+def execute_shifts(cur):
     shift = change = 0
-    for w in v.children[::-1]:
-        w.x += shift
-        w.mod += shift
-        change += w.change
-        shift += w.shift + change
+    for c in cur.children[::-1]:
+        c.x += shift
+        c.mod += shift
+        change += c.change
+        shift += c.shift + change
 
-def ancestor(vil, v, default_ancestor):
-    if vil.ancestor in v.parent.children:
-        return vil.ancestor
-    else:
-        return default_ancestor
 
-def second_walk(v, m=0, depth=0, min=None):
-    v.x += m
-    v.y = depth
+def second_walk(cur, m=0):
+    """
+    Pre-order traversal of the tree to finalize x-coordinates by using the mod values
+    """
+    cur.x += m
 
-    if min is None or v.x < min:
-        min = v.x
-
-    for w in v.children:
-        min = second_walk(w, m + v.mod, depth+1, min)
-
-    return min
-
-def third_walk(tree, n):
-    tree.x += n
-    for c in tree.children:
-        third_walk(c, n)
-
-class Tree:
-    def __init__(self, label="", node_id=-1, *children):
-        self.label = label
-        self.node_id = node_id
-        if children:
-            self.children = children
-        else:
-            self.children = []
+    for c in cur.children:
+        second_walk(c, m + cur.mod)

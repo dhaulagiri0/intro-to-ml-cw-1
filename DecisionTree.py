@@ -3,7 +3,7 @@ from abc import ABC, abstractmethod
 import matplotlib.pyplot as plt
 import numpy as np
 
-from DrawTree import Tree, buchheim
+from DrawTree import buchheim
 from TreeUtils import entropy, gain
 
 
@@ -39,7 +39,7 @@ class BaseDecisionTree(ABC):
         pass
 
     @abstractmethod
-    def predict(self, sample):
+    def predict(self, sample) -> "BaseDecisionTree":
         """
         Predict the label for a given sample (without label).
         Returns the predicted label.
@@ -50,7 +50,7 @@ class BaseDecisionTree(ABC):
         pass
 
     @abstractmethod
-    def batch_predict(self, samples):
+    def batch_predict(self, samples) -> np.ndarray:
         """
         Predict the labels for a batch of samples.
         Returns a 1D numpy array of predicted labels.
@@ -61,7 +61,7 @@ class BaseDecisionTree(ABC):
         pass
 
     @abstractmethod
-    def visualise(self, x: int, max_depth=5) -> plt:
+    def visualise(self, h_scaling: int, max_depth=5):
         """
         Visualise the decision tree structure, with pure matplotlib.
         Returns the matplotlib.pyplot object for further manipultion or display.
@@ -221,7 +221,8 @@ class DecisionTree(BaseDecisionTree):
             )
         return self.__predict(self.tree, sample)
 
-    def batch_predict(self, samples):
+
+    def batch_predict(self, samples) -> np.ndarray:
         if self.tree is None:
             raise ValueError(
                 "The decision tree has not been trained yet. "
@@ -262,11 +263,10 @@ class DecisionTree(BaseDecisionTree):
                 "Please call the 'train' method before visualization."
             )
 
+        draw_tree = buchheim(self.tree)
+
         _, ax = plt.subplots(figsize=(12 * h_scaling, 8))
         ax.axis("off")
-
-        tree = self.__parse_draw_tree(self.tree, 0)
-        draw_tree = buchheim(tree)
 
         def draw_node(node, depth):
             if depth >= max_depth:
@@ -292,31 +292,6 @@ class DecisionTree(BaseDecisionTree):
 
         draw_node(draw_tree, 0)
         return plt
-
-    def __parse_draw_tree(self, current_tree, node_id):
-        """
-        Recursively parse the decision tree into a format suitable for visualization.
-        Returns a Tree object representing the structure of the decision tree.
-
-        Parameters:
-        - current_tree: The current node of the decision tree (can be a dict or a
-          label if it's a leaf).
-        - node_id: An integer representing the unique ID of the current node.
-        """
-
-        if not isinstance(current_tree, dict):
-            return Tree(str(current_tree), node_id)
-        left_tree = self.__parse_draw_tree(current_tree[BaseDecisionTree.LEFT_TREE], 0)
-        right_tree = self.__parse_draw_tree(
-            current_tree[BaseDecisionTree.RIGHT_TREE], 1
-        )
-        return Tree(
-            f"[X{current_tree[BaseDecisionTree.FEATURE_INDEX]} < "
-            f"{current_tree[BaseDecisionTree.FEATURE_THRESHOLD]:.2f}]",
-            node_id,
-            left_tree,
-            right_tree,
-        )
 
     def get_top_k_features(self, k: int) -> list[tuple[int, float]]:
         """
