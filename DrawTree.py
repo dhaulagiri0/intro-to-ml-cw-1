@@ -40,7 +40,7 @@ def buchheim(tree):
     second_walk(dt)
     return dt
 
-DISTANCE = 1
+DISTANCE = 1.2  
 
 def firstwalk(cur):
     """
