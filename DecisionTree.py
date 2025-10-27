@@ -279,7 +279,7 @@ class DecisionTree(BaseDecisionTree):
 
         max_x, actual_depth = get_tree_dimensions(draw_tree, depth_limit=max_depth)
         
-       
+        
         v_spacing = 3.5 
         h_spacing = 2.5 * h_scaling  
         
@@ -287,7 +287,19 @@ class DecisionTree(BaseDecisionTree):
         fig_width = max(10, max_x * 0.8) * h_scaling
         fig_height = max(6, actual_depth * 1.5)
         
+        # Limit figure size to prevent matplotlib errors (max 2^16 pixels)
+        # At 100 DPI (default), this is ~655 inches
+        MAX_SIZE = 500  
+        if fig_width > MAX_SIZE or fig_height > MAX_SIZE:
+            scale_factor = min(MAX_SIZE / fig_width, MAX_SIZE / fig_height)
+            fig_width *= scale_factor
+            fig_height *= scale_factor
+            h_spacing *= scale_factor
+            v_spacing *= scale_factor
+            print(f"Warning: Tree is very large. Scaling down by {scale_factor:.2f}x to fit.")
+            print(f"Consider using a smaller max_depth parameter for better visualization.")
         
+        # Larger font size for readability in documents
         base_fontsize = max(8, min(12, 100 / (max_x + 1)))
         
         _, ax = plt.subplots(figsize=(fig_width, fig_height))
@@ -338,7 +350,7 @@ class DecisionTree(BaseDecisionTree):
         used_colors = []  
 
         def draw_node(node, depth, parent_color=None):
-            if depth >= max_depth:
+            if depth > max_depth:
                 return
             if node is not None:
                 x_pos = node.x * h_spacing
