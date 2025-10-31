@@ -2,7 +2,7 @@ from abc import ABC, abstractmethod
 
 import matplotlib.pyplot as plt
 import numpy as np
-
+import random
 from DrawTree import buchheim
 from TreeUtils import entropy, gain
 
@@ -265,32 +265,137 @@ class DecisionTree(BaseDecisionTree):
 
         draw_tree = buchheim(self.tree)
 
-        _, ax = plt.subplots(figsize=(12 * h_scaling, 8))
+        # Calculate tree dimensions for better scaling
+        def get_tree_dimensions(node, depth=0, depth_limit=None):
+            if (depth_limit and depth >= depth_limit) or node is None:
+                return 0, depth
+            max_x = abs(node.x)
+            current_max_depth = depth
+            for child in node.children:
+                child_max_x, child_max_depth = get_tree_dimensions(child, depth + 1, depth_limit)
+                max_x = max(max_x, child_max_x)
+                current_max_depth = max(current_max_depth, child_max_depth)
+            return max_x, current_max_depth
+
+        max_x, actual_depth = get_tree_dimensions(draw_tree, depth_limit=max_depth)
+        
+        
+        v_spacing = 3.5 
+        h_spacing = 2.5 * h_scaling  
+        
+        
+        fig_width = max(10, max_x * 0.8) * h_scaling
+        fig_height = max(6, actual_depth * 1.5)
+        
+        # Limit figure size to prevent matplotlib errors (max 2^16 pixels)
+        # At 100 DPI (default), this is ~655 inches
+        MAX_SIZE = 500  
+        if fig_width > MAX_SIZE or fig_height > MAX_SIZE:
+            scale_factor = min(MAX_SIZE / fig_width, MAX_SIZE / fig_height)
+            fig_width *= scale_factor
+            fig_height *= scale_factor
+            h_spacing *= scale_factor
+            v_spacing *= scale_factor
+            print(f"Warning: Tree is very large. Scaling down by {scale_factor:.2f}x to fit.")
+            print(f"Consider using a smaller max_depth parameter for better visualization.")
+        
+        # Larger font size for readability in documents
+        base_fontsize = max(8, min(12, 100 / (max_x + 1)))
+        
+        _, ax = plt.subplots(figsize=(fig_width, fig_height))
         ax.axis("off")
 
-        def draw_node(node, depth):
-            if depth >= max_depth:
+        # Color generation with neighborhood checking
+    
+        
+        def color_distance(color1, color2):
+            """Calculate Euclidean distance between two RGB colors
+            parameters:
+            - color1: first color in hex format (e.g., '#ff5733')
+            - color2: second color in hex format (e.g., '#33ff57')
+            Returns:
+            - distance: Euclidean distance between the two colors in RGB space
+            """
+
+            r1, g1, b1 = int(color1[1:3], 16), int(color1[3:5], 16), int(color1[5:7], 16)
+            r2, g2, b2 = int(color2[1:3], 16), int(color2[3:5], 16), int(color2[5:7], 16)
+            return ((r1-r2)**2 + (g1-g2)**2 + (b1-b2)**2)**0.5
+        
+        def generate_distinct_color(used_colors, min_distance=150):
+            """Generate a random color that's sufficiently different from recently used colors
+            parameters:
+            - used_colors: list of colors already used (in hex format)
+            - min_distance: minimum Euclidean distance required from recently used colors
+            Returns:
+            - new_color: a new color in hex format
+            """
+            max_attempts = 100
+            for _ in range(max_attempts):
+                r = random.randint(0, 255)
+                g = random.randint(0, 255)
+                b = random.randint(0, 255)
+                
+                # avoid light colors
+                if r + g + b > 650:
+                    continue
+                
+                new_color = f'#{r:02x}{g:02x}{b:02x}'
+                
+                # Check distance from recently used colors (last 5)
+                if all(color_distance(new_color, used) >= min_distance for used in used_colors[-5:]):
+                    return new_color
+ 
+            return new_color
+        
+        used_colors = []  
+
+        def draw_node(node, depth, parent_color=None):
+            if depth > max_depth:
                 return
             if node is not None:
+                x_pos = node.x * h_spacing
+                y_pos = -node.y * v_spacing
+                
                 ax.text(
-                    node.x * h_scaling,
-                    -node.y * h_scaling,
+                    x_pos,
+                    y_pos,
                     node.label,
                     ha="center",
                     va="center",
-                    bbox=dict(boxstyle="round,pad=0.3", fc="white", ec="black", lw=1),
-                    fontsize=5,
+                    bbox=dict(boxstyle="round,pad=0.4", fc="lightblue", ec="black", lw=1.2),
+                    fontsize=base_fontsize,
+                    weight='bold'
                 )
+                
+                
+                if node.children:
+                    my_color = generate_distinct_color(used_colors)
+                    used_colors.append(my_color)
+                else:
+                    my_color = parent_color
+                
                 if node.parent is not None:
+                    parent_x = node.parent.x * h_spacing
+                    parent_y = -node.parent.y * v_spacing
                     ax.plot(
-                        [node.x * h_scaling, node.parent.x * h_scaling],
-                        [-node.y * h_scaling, -node.parent.y * h_scaling],
-                        "k-",
+                        [x_pos, parent_x],
+                        [y_pos, parent_y],
+                        color=parent_color,
+                        linewidth=1.5,
+                        alpha=0.8
                     )
+                
                 for child in node.children:
-                    draw_node(child, depth + 1)
+                    draw_node(child, depth + 1, my_color)
 
-        draw_node(draw_tree, 0)
+       
+        initial_color = generate_distinct_color([])
+        used_colors.append(initial_color)
+        draw_node(draw_tree, 0, initial_color)
+        
+
+        ax.margins(0.05)
+        
         return plt
 
     def get_top_k_features(self, k: int) -> list[tuple[int, float]]:

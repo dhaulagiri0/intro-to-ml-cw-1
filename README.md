@@ -135,3 +135,42 @@ Comprehensive evaluation metrics:
 - Jupyter (for notebook analysis)
 
 See `requirements.txt` for specific versions.
+
+## Running Tests
+
+1. Create a virtual environment (recommended):
+```bash
+python -m venv .venv
+source .venv/bin/activate  # On Windows: .venv\Scripts\activate
+```
+
+2. Ensure all dependencies are installed:
+
+
+### Running Tests
+
+Run all tests:
+```bash
+pytest tests/ -v
+```
+
+Run specific test files:
+```bash
+pytest tests/test_entropy.py -v
+pytest tests/test_gain.py -v
+pytest tests/test_best_split.py -v
+pytest tests/test_integration.py -v
+```
+
+Run tests with coverage:
+```bash
+pytest tests/ --cov=. --cov-report=html
+```
+
+### Test Structure
+
+The test suite includes:
+- `test_entropy.py`: Tests for entropy calculation
+- `test_gain.py`: Tests for information gain computation
+- `test_best_split.py`: Tests for optimal split selection
+- `test_integration.py`: Integration tests for the complete pipeline
